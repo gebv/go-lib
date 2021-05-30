@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package simple;
+
+option go_package = "api/services/simple";
+
+service SimpleService {
+  rpc Echo (EchoRequest) returns (EchoResponse) {
+  }
+}
+
+message EchoRequest {
+    string in = 1;
+}
+message EchoResponse {
+    string out = 1;
+}

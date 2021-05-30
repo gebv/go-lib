@@ -1,0 +1,134 @@
+version: '3.4'
+x-grpcserver-reverseproxy: &grpcserver-reverseproxy
+  image: nginx:mainline-alpine
+  restart: unless-stopped
+  depends_on:
+    - grpcserver
+  volumes:
+    - ./gprc443:/etc/nginx/conf.d/gprc443:ro
+    - ./ssl:/etc/nginx/ssl:ro
+  command:
+    - /bin/sh
+    - -c
+    - |
+      rm -rf /etc/nginx/conf.d/default.conf
+      envsubst '$$SSLCERT $$SSLPRIV $$APPHOST' < /etc/nginx/conf.d/gprc443 > /etc/nginx/conf.d/default.conf
+      exec nginx -g 'daemon off;'
+x-https-reverseproxy: &https-reverseproxy
+  image: nginx:mainline-alpine
+  restart: unless-stopped
+  depends_on:
+    - httpserver
+  volumes:
+    - ./http443:/etc/nginx/conf.d/http443:ro
+    - ./ssl:/etc/nginx/ssl:ro
+  command:
+    - /bin/sh
+    - -c
+    - |
+      rm -rf /etc/nginx/conf.d/default.conf
+      envsubst '$$SSLCERT $$SSLPRIV $$APPHOST' < /etc/nginx/conf.d/http443 > /etc/nginx/conf.d/default.conf
+      exec nginx -g 'daemon off;'
+services:
+  grpcserver:
+    build:
+      context: ./apps/grpcserver
+      target: 'webapp'
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: "8080"
+    ports:
+      - 127.0.0.1:10001:8080
+  httpserver:
+    build:
+      context: ./apps/httpserver
+      target: 'webapp'
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: "8080"
+    ports:
+      - 127.0.0.1:10002:8080
+  # GRPC SERVER
+  grpc-selfsigned-ok:
+    <<: *grpcserver-reverseproxy
+    ports:
+      - "127.0.0.1:10010:443"
+    environment:
+      APPHOST: grpcserver:8080
+      SSLCERT: selfsigned-localhost-ok.crt
+      SSLPRIV: selfsigned-localhost-ok.key
+  grpc-selfsigned-expired:
+    <<: *grpcserver-reverseproxy
+    ports:
+      - "127.0.0.1:10020:443"
+    environment:
+      APPHOST: grpcserver:8080
+      SSLCERT: selfsigned-localhost-expired.crt
+      SSLPRIV: selfsigned-localhost-expired.key
+  grpc-selfsigned-simple:
+    <<: *grpcserver-reverseproxy
+    ports:
+      - "127.0.0.1:10030:443"
+    environment:
+      APPHOST: grpcserver:8080
+      SSLCERT: selfsigned-localhost-simple.crt
+      SSLPRIV: selfsigned-localhost-simple.key
+  grpc-trusted-ok:
+    <<: *grpcserver-reverseproxy
+    ports:
+      - "127.0.0.1:10040:443"
+    environment:
+      APPHOST: grpcserver:8080
+      SSLCERT: trusted-localhost-ok.crt
+      SSLPRIV: trusted-localhost-ok.key
+  grpc-trusted-expired:
+    <<: *grpcserver-reverseproxy
+    ports:
+      - "127.0.0.1:10050:443"
+    environment:
+      APPHOST: grpcserver:8080
+      SSLCERT: trusted-localhost-expired.crt
+      SSLPRIV: trusted-localhost-expired.key
+  # HTTP SERVER
+  http-selfsigned-ok:
+    <<: *https-reverseproxy
+    ports:
+      - "127.0.0.1:10110:443"
+    environment:
+      APPHOST: httpserver:8080
+      SSLCERT: selfsigned-localhost-ok.crt
+      SSLPRIV: selfsigned-localhost-ok.key
+  http-selfsigned-expired:
+    <<: *https-reverseproxy
+    ports:
+      - "127.0.0.1:10120:443"
+    environment:
+      APPHOST: httpserver:8080
+      SSLCERT: selfsigned-localhost-expired.crt
+      SSLPRIV: selfsigned-localhost-expired.key
+  http-selfsigned-simple:
+    <<: *https-reverseproxy
+    ports:
+      - "127.0.0.1:10130:443"
+    environment:
+      APPHOST: httpserver:8080
+      SSLCERT: selfsigned-localhost-simple.crt
+      SSLPRIV: selfsigned-localhost-simple.key
+  http-trusted-ok:
+    <<: *https-reverseproxy
+    ports:
+      - "127.0.0.1:10140:443"
+    environment:
+      APPHOST: httpserver:8080
+      SSLCERT: trusted-localhost-ok.crt
+      SSLPRIV: trusted-localhost-ok.key
+  http-trusted-expired:
+    <<: *https-reverseproxy
+    ports:
+      - "127.0.0.1:10150:443"
+    environment:
+      APPHOST: httpserver:8080
+      SSLCERT: trusted-localhost-expired.crt
+      SSLPRIV: trusted-localhost-expired.key
