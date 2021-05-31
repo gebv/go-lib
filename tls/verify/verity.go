@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	ErrCertExpired           = errors.New("tls: certificate expired")
+	ErrCertExpired           = errors.New("certificate expired")
 	ErrNotMatchedFingerprint = errors.New("not matched fingerprint")
 )
 
@@ -49,7 +49,7 @@ type tlsVerifyPeerCertificate struct {
 
 func (v *tlsVerifyPeerCertificate) Wait() error {
 	if v.waitErr == nil {
-		panic("error waiter in nil")
+		return errors.New("error waiter in nil")
 	}
 	return v.waitErr.Wait()
 }

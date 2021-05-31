@@ -70,6 +70,9 @@ case "$1" in
       days=${4:-365}
       echo "lifetime '${days}' days"
       openssl req -x509 -nodes -newkey rsa:2048 -keyout $outPath/$name.key -out $outPath/$name.crt -days $days -subj "/CN=${domain}"
+
+      openssl x509 -in $outPath/${name}.crt -noout -fingerprint -sha1 > $outPath/${name}.crt.sha1
+      [ $? -eq 0 ]  || { echo "⛔ failed to gen fingerprint cert '${domain}'"; exit 1 ;}
     ;;
     "domain" | "d" | "D" )
       name=$2
@@ -93,6 +96,9 @@ case "$1" in
         -CAcreateserial \
         -out $outPath/${name}.crt
       [ $? -eq 0 ]  || { echo "⛔ failed gen cert for domain '${domain}'"; exit 1 ;}
+
+      openssl x509 -in $outPath/${name}.crt -noout -fingerprint -sha1 > $outPath/${name}.crt.sha1
+      [ $? -eq 0 ]  || { echo "⛔ failed to gen fingerprint cert '${domain}'"; exit 1 ;}
 
       echo "👌  done."
     ;;
