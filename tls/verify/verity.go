@@ -7,7 +7,7 @@ import (
 	"time"
 
 	internalErrors "github.com/gebv/go-lib/internal/errors"
-	"github.com/pion/dtls/pkg/crypto/fingerprint"
+	"github.com/pion/dtls/v2/pkg/crypto/fingerprint"
 	"github.com/pkg/errors"
 )
 
