@@ -5,8 +5,8 @@ import (
 	"net/http"
 )
 
-func HttpClient(opts ...tlsVerifyPeerCertificateOption) *http.Client {
-	v := TLSVerifyPeerCertificate(opts...)
+func HttpClient(opts ...VerifyPeerCertificateOption) *http.Client {
+	v := VerifyPeerCertificate(opts...)
 	return &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{

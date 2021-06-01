@@ -1,13 +1,11 @@
 package verify
 
 import (
-	"context"
-	"crypto"
+	"crypto/sha1"
 	"crypto/x509"
+	"fmt"
 	"time"
 
-	internalErrors "github.com/gebv/go-lib/internal/errors"
-	"github.com/pion/dtls/v2/pkg/crypto/fingerprint"
 	"github.com/pkg/errors"
 )
 
@@ -16,10 +14,13 @@ var (
 	ErrNotMatchedFingerprint = errors.New("not matched fingerprint")
 )
 
-func TLSVerifyPeerCertificate(opts ...tlsVerifyPeerCertificateOption) *tlsVerifyPeerCertificate {
-	v := &tlsVerifyPeerCertificate{
-		opts:    &tlsVerifyPeerCertificateOptions{},
-		waitErr: internalErrors.WaitOneErrorOrNil(),
+type Verifier interface {
+	Option() func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error
+}
+
+func VerifyPeerCertificate(opts ...VerifyPeerCertificateOption) *verifyPeerCertificate {
+	v := &verifyPeerCertificate{
+		opts: &verifyPeerCertificateOptions{},
 	}
 	for _, set := range opts {
 		set(v.opts)
@@ -27,36 +28,14 @@ func TLSVerifyPeerCertificate(opts ...tlsVerifyPeerCertificateOption) *tlsVerify
 	return v
 }
 
-func TLSVerifyPeerCertificateWithContext(ctx context.Context, opts ...tlsVerifyPeerCertificateOption) (*tlsVerifyPeerCertificate, context.Context) {
-	w, ctx := internalErrors.WaitOneErrorOrNilWithontext(ctx)
-	v := &tlsVerifyPeerCertificate{
-		opts:    &tlsVerifyPeerCertificateOptions{},
-		waitErr: w,
-	}
-	for _, set := range opts {
-		set(v.opts)
-	}
-	return v, ctx
+type verifyPeerCertificate struct {
+	opts *verifyPeerCertificateOptions
 }
 
-type tlsVerifyPeerCertificate struct {
-	opts    *tlsVerifyPeerCertificateOptions
-	waitErr interface {
-		Wait() error
-		Release(err error)
-	}
-}
-
-func (v *tlsVerifyPeerCertificate) Wait() error {
-	if v.waitErr == nil {
-		return errors.New("error waiter in nil")
-	}
-	return v.waitErr.Wait()
-}
-
-func (v *tlsVerifyPeerCertificate) Option() func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+func (v *verifyPeerCertificate) Option() func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
 	return func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
-		defer v.releaseDone()
+		defer v.done()
+		v.begin()
 
 		opts := x509.VerifyOptions{
 			// TODO: add rootCAs
@@ -102,13 +81,8 @@ func (v *tlsVerifyPeerCertificate) Option() func(rawCerts [][]byte, verifiedChai
 		}
 
 		if len(v.opts.SHA1Fingerprint) > 0 {
-			gotFingerprint, err := fingerprint.Fingerprint(certs[0], crypto.SHA1)
-			if err != nil {
-				err = errors.Wrap(err, "failed to create a fingerprint for server cert")
-				v.releaseError(err)
-				return err
-			}
-			if normalHex(v.opts.SHA1Fingerprint) != normalHex(gotFingerprint) {
+			got := []byte(fmt.Sprintf("%x", sha1.Sum(certs[0].Raw)))
+			if normalHex(v.opts.SHA1Fingerprint) != normalHex(string(got)) {
 				err := ErrNotMatchedFingerprint
 				v.releaseError(err)
 				return err
@@ -119,14 +93,14 @@ func (v *tlsVerifyPeerCertificate) Option() func(rawCerts [][]byte, verifiedChai
 	}
 }
 
-func (v *tlsVerifyPeerCertificate) releaseError(err error) {
-	if v.waitErr != nil {
-		v.waitErr.Release(err)
-	}
+func (v *verifyPeerCertificate) releaseError(err error) {
+	v.opts.sendEvent(Event_Err{err})
 }
 
-func (v *tlsVerifyPeerCertificate) releaseDone() {
-	if v.waitErr != nil {
-		v.waitErr.Release(nil)
-	}
+func (v *verifyPeerCertificate) done() {
+	v.opts.sendEvent(Event_Done{})
+}
+
+func (v *verifyPeerCertificate) begin() {
+	v.opts.sendEvent(Event_Begin{})
 }

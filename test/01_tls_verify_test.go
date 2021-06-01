@@ -1,13 +1,18 @@
 package test
 
 import (
+	"context"
 	"errors"
 	"io/ioutil"
 	"strings"
 	"testing"
+	"time"
 
+	pb "github.com/gebv/go-lib/test/testdata/verify/api/services/simple"
 	"github.com/gebv/go-lib/tls/verify"
+	grpcx "github.com/gebv/go-lib/tls/verify/grpc"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/grpc"
 )
 
 const (
@@ -161,4 +166,122 @@ func TestTLSVerify_HTTP_Selfsigned(t *testing.T) {
 		assert.NoError(t, err)
 		assert.EqualValues(t, want, string(dat))
 	})
+}
+
+func TestTLSVerify_GRPC_Direct(t *testing.T) {
+	t.Run("plaintext", func(t *testing.T) {
+		var opts []grpc.DialOption
+		opts = append(opts, grpc.WithInsecure())
+		opts = append(opts, grpc.WithTimeout(1*time.Second))
+		opts = append(opts, grpc.WithBlock())
+
+		ctx := context.Background()
+		addr := grpcServer_Direct
+		conn, err := grpcx.Dial(ctx, addr,
+			grpcx.PlainText(),
+			grpcx.AddStdGRPCOptions(opts...),
+		)
+		if err != nil {
+			t.Fatalf("failed to dial: %v", err)
+		}
+		defer conn.Close()
+		checkRequest(t, conn)
+	})
+	t.Run("no-ssl", func(t *testing.T) {
+		var opts []grpc.DialOption
+		opts = append(opts, grpc.WithTimeout(1*time.Second))
+		opts = append(opts, grpc.WithBlock())
+
+		ctx := context.Background()
+		addr := grpcServer_Direct
+		_, err := grpcx.Dial(ctx, addr,
+			grpcx.AddStdGRPCOptions(opts...),
+		)
+		assert.Error(t, err)
+		assert.EqualError(t, err, grpcx.ErrNotResponse.Error())
+	})
+}
+
+func TestTLSVerify_GRPC_Trusted(t *testing.T) {
+	t.Run("ok", func(t *testing.T) {
+		var opts []grpc.DialOption
+		opts = append(opts, grpc.WithTimeout(1*time.Second))
+		opts = append(opts, grpc.WithBlock())
+
+		ctx := context.Background()
+		addr := grpcServer_trustedOK
+		conn, err := grpcx.Dial(ctx, addr,
+			grpcx.AddStdGRPCOptions(opts...),
+		)
+		if err != nil {
+			t.Fatalf("failed to dial: %v", err)
+		}
+		defer conn.Close()
+		checkRequest(t, conn)
+	})
+	t.Run("okAndFingerprintOK", func(t *testing.T) {
+		var opts []grpc.DialOption
+		opts = append(opts, grpc.WithTimeout(1*time.Second))
+		opts = append(opts, grpc.WithBlock())
+
+		ctx := context.Background()
+		addr := grpcServer_trustedOK
+		addrFingerprint := extractFingerptinSHA1(t, addr)
+
+		conn, err := grpcx.Dial(ctx, addr,
+			grpcx.Fingerprint(addrFingerprint),
+			grpcx.AddStdGRPCOptions(opts...),
+		)
+		if err != nil {
+			t.Fatalf("failed to dial: %v", err)
+		}
+		defer conn.Close()
+		checkRequest(t, conn)
+	})
+	t.Run("okAndFingerprintFail", func(t *testing.T) {
+		var opts []grpc.DialOption
+		opts = append(opts, grpc.WithTimeout(1*time.Second))
+		opts = append(opts, grpc.WithBlock())
+
+		ctx := context.Background()
+		addr := grpcServer_trustedOK
+
+		_, err := grpcx.Dial(ctx, addr,
+			grpcx.Fingerprint(fingerprintNoRegistred),
+			grpcx.AddStdGRPCOptions(opts...),
+		)
+		assert.EqualError(t, err, verify.ErrNotMatchedFingerprint.Error())
+	})
+	t.Run("expired", func(t *testing.T) {
+		addr := grpcServer_trustedExpired
+		assertGrpcFailedConn(t, addr, verify.ErrCertExpired)
+	})
+}
+
+func TestTLSVerify_GRPC_timeout(t *testing.T) {
+	refused := "localhost:12312"
+	timeout := "10.9.8.7:12312"
+}
+
+func assertGrpcFailedConn(t *testing.T, addr string, wantErr error, opts ...grpc.DialOption) {
+	if opts == nil || len(opts) == 0 {
+		opts = []grpc.DialOption{}
+	}
+	opts = append(opts, grpc.WithTimeout(1*time.Second))
+	opts = append(opts, grpc.WithBlock())
+
+	ctx := context.Background()
+	_, err := grpcx.Dial(ctx, addr,
+		grpcx.AddStdGRPCOptions(opts...),
+	)
+	assert.Error(t, err)
+	assert.EqualError(t, err, wantErr.Error())
+}
+
+func checkRequest(t *testing.T, conn *grpc.ClientConn) {
+	t.Helper()
+	client := pb.NewSimpleServiceClient(conn)
+	res, err := client.Echo(context.TODO(), &pb.EchoRequest{In: "abc"})
+	assert.NoError(t, err)
+	assert.EqualValues(t, `in:"abc"`, res.GetOut())
 }
